@@ -35,7 +35,7 @@ class RestoreServiceTest {
 
         RestoreService.RestoreResult result = fixture.service().export("2026/inc", output);
 
-        assertEquals(output.toAbsolutePath().normalize(), result.outputDirectory());
+        assertEquals(output.toRealPath(), result.outputDirectory().toRealPath());
         assertEquals(1, result.worlds());
         assertEquals(2, result.files());
         assertEquals(2, result.snapshotsInChain());
