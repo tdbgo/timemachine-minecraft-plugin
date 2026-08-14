@@ -1,0 +1,20 @@
+config-version: 7
+
+# TimeMachine works with safe defaults. Most servers only need this file.
+# Run /tmb help config for a quick explanation.
+
+# auto follows each player's client language and the server language for console.
+# Use en or ko to force one language for everyone.
+language: auto
+
+backup:
+  # safe is recommended. fast scans unchanged files faster but can miss preserved timestamps.
+  change-detection: safe
+
+schedule:
+  # Disabled until the operator chooses to enable automatic backups.
+  enabled: false
+  daily-times:
+    - "04:00"
+  # system uses the server OS timezone. IANA IDs such as Asia/Seoul are also accepted.
+  timezone: "system"

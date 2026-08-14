@@ -1,0 +1,66 @@
+name: Timemachine
+version: ${version}
+main: dev.playcity.timemachine.TimeMachinePlugin
+api-version: '26.2'
+load: POSTWORLD
+authors: ['PLAYCITY BLOCK']
+description: Verifiable incremental region backups for Paper.
+prefix: Timemachine
+commands:
+  timemachine:
+    description: Create, inspect, and verify TimeMachine snapshots
+    usage: /tmb <help|backup|status|doctor|history|verify|prune|reconcile|reload>
+    aliases: [tmb, tm]
+permissions:
+  timemachine.backup:
+    description: Create manual TimeMachine backups
+    default: op
+  timemachine.status:
+    description: View TimeMachine runtime and last-backup status
+    default: op
+  timemachine.doctor:
+    description: Diagnose TimeMachine storage, integrity, and scheduling settings
+    default: op
+  timemachine.history:
+    description: Query snapshot history
+    default: op
+  timemachine.reload:
+    description: Validate and reload TimeMachine configuration
+    default: op
+  timemachine.reconcile:
+    description: Reconcile snapshot locations and active-chain safety
+    default: op
+  timemachine.verify:
+    description: Verify snapshot files and restore chains
+    default: op
+  timemachine.prune:
+    description: Preview and confirm chain-safe snapshot retention
+    default: op
+  timemachine.viewer:
+    description: Read-only TimeMachine status and history access
+    default: false
+    children:
+      timemachine.status: true
+      timemachine.doctor: true
+      timemachine.history: true
+  timemachine.operator:
+    description: Routine TimeMachine backup and verification access
+    default: false
+    children:
+      timemachine.viewer: true
+      timemachine.backup: true
+      timemachine.verify: true
+  timemachine.admin:
+    description: Grant all TimeMachine administrative permissions
+    default: op
+    children:
+      timemachine.viewer: true
+      timemachine.operator: true
+      timemachine.backup: true
+      timemachine.status: true
+      timemachine.doctor: true
+      timemachine.history: true
+      timemachine.reload: true
+      timemachine.reconcile: true
+      timemachine.verify: true
+      timemachine.prune: true

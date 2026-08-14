@@ -1,0 +1,177 @@
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '9.2.2'
+}
+
+group = 'dev.playcity'
+version = '0.4.0'
+
+def paperApiVersion = providers.gradleProperty('paperApiVersion').getOrElse('26.2.build.111-stable')
+def toolchainJavaVersion = providers.gradleProperty('javaVersion').map { it.toInteger() }.getOrElse(25)
+def releaseJavaVersion = providers.gradleProperty('releaseVersion').map { it.toInteger() }.getOrElse(25)
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'papermc'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    compileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+    implementation 'org.xerial:sqlite-jdbc:3.53.2.0'
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testCompileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+    testRuntimeOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+configurations.named('compileClasspath') {
+    attributes {
+        attribute(
+                org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE,
+                toolchainJavaVersion
+        )
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(toolchainJavaVersion)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = releaseJavaVersion
+    options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+def expandedPluginVersion = version.toString()
+
+processResources {
+    filteringCharset = 'UTF-8'
+    inputs.property('pluginVersion', expandedPluginVersion)
+    filesMatching('plugin.yml') {
+        expand(version: expandedPluginVersion)
+    }
+}
+
+tasks.jar {
+    enabled = false
+}
+
+tasks.shadowJar {
+    archiveClassifier.set('')
+    mergeServiceFiles()
+    manifest {
+        attributes(
+                'Main-Class': 'dev.playcity.timemachine.cli.TimeMachineCli',
+                'Implementation-Title': 'TimeMachine',
+                'Implementation-Version': expandedPluginVersion,
+                'Implementation-Vendor': 'PLAYCITY BLOCK'
+        )
+    }
+}
+
+tasks.build {
+    dependsOn(tasks.shadowJar)
+}
+
+tasks.test {
+    useJUnitPlatform()
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+}
+
+def shadowArchive = tasks.named('shadowJar').flatMap { it.archiveFile }
+
+tasks.register('verifyPluginJar') {
+    group = 'verification'
+    description = 'Checks the distributable plugin JAR structure and descriptor.'
+    dependsOn(tasks.shadowJar)
+    inputs.file(shadowArchive)
+
+    doLast {
+        def archive = shadowArchive.get().asFile
+        if (!archive.isFile() || archive.length() == 0L) {
+            throw new GradleException("Plugin JAR is missing or empty: ${archive}")
+        }
+        if (archive.name != "Timemachine-${expandedPluginVersion}.jar") {
+            throw new GradleException("Unexpected compatibility-sensitive JAR filename: ${archive.name}")
+        }
+
+        new java.util.zip.ZipFile(archive).withCloseable { zip ->
+            def entries = java.util.Collections.list(zip.entries())
+            def entryNames = entries.collect { it.name }
+            def requiredEntries = [
+                    'plugin.yml',
+                    'config.yml',
+                    'messages_en.properties',
+                    'messages_ko.properties',
+                    'dev/playcity/timemachine/TimeMachinePlugin.class',
+                    'dev/playcity/timemachine/cli/TimeMachineCli.class',
+                    'org/sqlite/JDBC.class'
+            ]
+            requiredEntries.each { required ->
+                if (!entryNames.contains(required)) {
+                    throw new GradleException("Plugin JAR is missing required entry: ${required}")
+                }
+            }
+            if (entryNames.any { it.startsWith('org/bukkit/') || it.startsWith('io/papermc/paper/') }) {
+                throw new GradleException('Paper/Bukkit API classes must not be bundled in the plugin JAR.')
+            }
+            def descriptorEntry = zip.getEntry('plugin.yml')
+            def descriptor = zip.getInputStream(descriptorEntry).getText('UTF-8')
+            if (descriptor.contains('${version}')) {
+                throw new GradleException('plugin.yml still contains an unexpanded version placeholder.')
+            }
+            if (!descriptor.contains("version: ${expandedPluginVersion}")) {
+                throw new GradleException("plugin.yml does not contain version ${expandedPluginVersion}.")
+            }
+            if (!descriptor.contains('name: Timemachine')
+                    || !descriptor.contains('main: dev.playcity.timemachine.TimeMachinePlugin')
+                    || !descriptor.contains("api-version: '26.2'")
+                    || !descriptor.contains("authors: ['PLAYCITY BLOCK']")
+                    || !descriptor.contains('aliases: [tmb, tm]')
+                    || !descriptor.contains('timemachine.viewer:')
+                    || !descriptor.contains('timemachine.operator:')
+                    || !descriptor.contains('timemachine.admin:')) {
+                throw new GradleException('plugin.yml branding or compatibility identity is incorrect.')
+            }
+            def defaultConfig = zip.getInputStream(zip.getEntry('config.yml')).getText('UTF-8')
+            if (!defaultConfig.contains('change-detection: safe')
+                    || !defaultConfig.contains('language: auto')
+                    || !defaultConfig.contains('enabled: false')
+                    || !defaultConfig.contains('timezone: "system"')) {
+                throw new GradleException('Bundled first-run config does not contain the expected safe defaults.')
+            }
+            def manifestEntry = zip.getEntry('META-INF/MANIFEST.MF')
+            def manifest = new java.util.jar.Manifest(zip.getInputStream(manifestEntry))
+            def attributes = manifest.mainAttributes
+            if (attributes.getValue('Implementation-Title') != 'TimeMachine'
+                    || attributes.getValue('Implementation-Vendor') != 'PLAYCITY BLOCK'
+                    || attributes.getValue('Implementation-Version') != expandedPluginVersion) {
+                throw new GradleException('JAR manifest publication metadata is incorrect.')
+            }
+            byte[] buffer = new byte[8192]
+            entries.findAll { !it.directory }.each { entry ->
+                zip.getInputStream(entry).withCloseable { input ->
+                    while (input.read(buffer) >= 0) {
+                        // Reading every entry validates its ZIP CRC.
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.check {
+    dependsOn(tasks.named('verifyPluginJar'))
+}

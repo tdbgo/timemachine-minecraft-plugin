@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible TimeMachine defect
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not upload live worlds, databases, credentials, server addresses, or other secrets. Use private vulnerability reporting for security issues.
+  - type: input
+    id: plugin-version
+    attributes:
+      label: TimeMachine version
+      placeholder: 0.4.0
+    validations:
+      required: true
+  - type: input
+    id: paper-version
+    attributes:
+      label: Paper version
+      description: Paste the full output of `/version` without server-identifying information.
+    validations:
+      required: true
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      description: Paste the first line of `java -version`.
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include the expected result and whether backup data, the current index, or autosave state was affected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove paths, addresses, player data, and secrets. Use a fenced code block.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I reproduced this on the latest release without using a hot-reload tool.
+          required: true
+        - label: I have not modified or restored the only copy of production data while reproducing this issue.
+          required: true
