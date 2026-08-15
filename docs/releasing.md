@@ -7,7 +7,8 @@ Use these values consistently on GitHub, Modrinth, release notes, and other publ
 - Project title: `TimeMachine`
 - Creator line: `TimeMachine by PLAYCITY BLOCK`
 - Team/publisher: `PLAYCITY BLOCK`
-- Short description: `Verifiable incremental region backups for Paper.`
+- `plugin.yml` description (do not change without a matching descriptor edit): `Verifiable incremental region backups for Paper.`
+- GitHub repository description: `Verifiable FULL and incremental region backups for Paper, with chain verification and offline restore export.`
 - Suggested GitHub repository: `timemachine-minecraft-plugin`
 - Suggested Modrinth slug: `timemachine`; use `playcity-block-timemachine` only when the shorter slug is unavailable
 
@@ -34,9 +35,9 @@ Changing any item above is a data migration project, not a branding edit.
 
 ## Candidate validation
 
-The backup, verification, and restore workflow has five months of owner-confirmed production operation. Continue to run the automated candidate checks below; repeat a disposable-server drill when backup or restore behavior changes.
+Run every automated candidate check below, and repeat the disposable-server drill whenever backup, retention, scheduling, or restore behavior changes.
 
-1. Confirm the compatibility matrix and unsupported cases in `README.md` are accurate.
+1. Confirm the requirements table and the unsupported cases in `README.md` are accurate for this candidate.
 2. Confirm `CHANGELOG.md`, both READMEs, configuration examples, and CLI help match the candidate.
 3. Run the production build on JDK 25 against the pinned Paper 26.2 build 111 API:
 
@@ -50,7 +51,7 @@ The backup, verification, and restore workflow has five months of owner-confirme
    .\gradlew.bat clean check "-PjavaVersion=25" "-PreleaseVersion=25" "-PpaperApiVersion=26.2.build.111-stable" --console=plain
    ```
 
-5. When backup, retention, scheduling, or restore behavior changes, test the candidate on a disposable Paper 26.2 build 111 server. Exercise first start, rejected reload, FULL and incremental backup, no-change backup, automatic unfiltered FULL promotion after a world-layout change, filtered layout-migration rejection, `status`, `doctor`, history, reconcile, verification, prune preview, shutdown during a copy, and an offline export/restore drill covering the `world/dimensions/<namespace>/<dimension>` layout.
+5. When backup, retention, scheduling, or restore behavior changes, test the candidate on a disposable Paper 26.2 build 111 server. Exercise first start, rejected reload, FULL and incremental backup, no-change backup, automatic unfiltered FULL promotion after a world-layout change, filtered layout-migration rejection, `status`, `doctor`, history, reconcile, verification, prune preview, shutdown during a copy, and an offline export/restore drill covering the `<world-root>/dimensions/<namespace>/<dimension>` layout.
 6. Run the candidate JAR directly and exercise `--help`, `restore list`, `restore verify`, and `restore export` against disposable data.
 7. Inspect the final JAR:
 
@@ -71,7 +72,8 @@ The backup, verification, and restore workflow has five months of owner-confirme
 - GitHub project and release headings use `TimeMachine`; the repository slug may be `timemachine-minecraft-plugin`. Creator attribution is `by PLAYCITY BLOCK` in copy, not prepended to the title.
 - Modrinth title, description, slug, supported Paper versions, Java requirement, and limitations match the README.
 - Modrinth environment is server-required/client-unsupported, loader is Paper, and no external dependency is required.
-- Upload `assets/timemachine-icon.png` as the project icon and `assets/timemachine-cover.png` as a titled gallery image.
+- Set `Contains AI-generated content` to yes and `External system interactions` to yes; keep advertising, paid features, telemetry, derivative content, photosensitivity warning, and archived project set to no.
+- Do not upload `assets/timemachine-icon.png`, `assets/timemachine-cover.png`, or any other AI-generated or AI-derived image to Modrinth. Leave media empty until an eligible human-created asset or genuine server screenshot is available.
 - Release notes clearly state that this is a region-data backup, not a complete server backup.
 - Recovery instructions lead with the offline export workflow and require a fully stopped server.
 - Retention is described as disabled by default and chain-based.

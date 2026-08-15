@@ -1,6 +1,6 @@
 # TimeMachine 사용법
 
-**TimeMachine by PLAYCITY BLOCK.**
+TimeMachine by PLAYCITY BLOCK
 
 한국어 · [English](usage.md)
 
@@ -8,9 +8,9 @@ TimeMachine은 Paper 월드의 `region`, `entities`, `poi` `.mca` 파일을 FULL
 
 ## 요구 사항
 
-- Paper 26.2 build 111 이상 26.2 계열
-- Java 25
-- Folia 미지원
+- `26.2` API 계열 Paper 서버. `plugin.yml`의 `api-version`은 `'26.2'`이며 `paper-api 26.2.build.111-stable`로 빌드합니다.
+- Java 25 이상 (`--release 25`로 컴파일).
+- Folia 미지원.
 
 ## 설치
 
@@ -194,7 +194,7 @@ retention:
 ## snapshot 구조
 
 ```text
-plugins/Timemachine/backups/snapshots/YYYY/<snapshot-id>/
+plugins/Timemachine/backups/snapshots/<year>/<snapshot-directory>/
   files/worlds/<world-uuid>/<scope>/r.<x>.<z>.mca
   snapshot.properties
   worlds.tsv
@@ -210,6 +210,8 @@ plugins/Timemachine/backups/snapshots/YYYY/<snapshot-id>/
 - `deletions.tsv`: 부모 이후 사라진 파일
 - `checksums.sha256`: 복사 파일용 표준 checksum 목록
 
+snapshot ID는 `snapshots/` 기준 상대 경로이므로 연도 디렉터리를 포함합니다. 예를 들어 `2026/2026-08-16_04-00-00-123_manual_1a2b3c4d` 형태이며 시각은 `schedule.timezone`을 따릅니다.
+
 ## 검증과 복원
 
 `/timemachine verify <snapshotId>`는 FULL base까지 전체 체인을 읽고 경로, 매핑, 파일 크기, SHA-256, 항목 수와 부모 관계를 확인합니다.
@@ -224,7 +226,7 @@ java -jar plugins/Timemachine-<version>.jar restore export --snapshot <snapshotI
 
 CLI를 한국어로 사용하려면 명령 어디에나 `--lang ko`를 추가합니다. 영어는 `--lang en`입니다.
 
-기본 저장소가 아니라면 `--store <경로>`를 지정하고, 옮겨 둔 체인은 `--archive <경로>`를 반복 지정합니다. export는 전체 체인을 재검증한 뒤 새 출력 디렉터리에 최종 상태를 구성하며, 기존 경로·저장소와 겹치는 경로·심볼릭 링크는 거부합니다. `worlds.tsv`의 source path가 Paper 26.1+ 차원 경로와 일치하면 `world/dimensions/<namespace>/<dimension>` 구조를 복원하고, 기존 snapshot은 종전 월드 디렉터리 구조를 유지합니다.
+기본 저장소가 아니라면 `--store <경로>`를 지정하고, 옮겨 둔 체인은 `--archive <경로>`를 반복 지정합니다. `restore list`는 `--limit <1-1000>`(기본 20)도 받습니다. 종료 코드는 `0` 성공, `1` 입출력·런타임 오류, `2` 사용법 오류, `3` 검증 실패입니다. export는 전체 체인을 재검증한 뒤 새 출력 디렉터리에 최종 상태를 구성하며, 기존 경로·저장소와 겹치는 경로·심볼릭 링크는 거부합니다. `worlds.tsv`의 source path가 `/dimensions/<namespace>/<dimension>`으로 끝나고 월드 key와 일치하면 `<world-root>/dimensions/<namespace>/<dimension>` 구조로 내보내고, 그 밖의 월드는 월드 이름(이식 가능하지 않거나 중복이면 UUID)으로 최상위 디렉터리 하나를 만듭니다.
 
 1. 서버 종료 전에 verify를 실행합니다.
 2. 서버를 완전히 종료하고 export를 만듭니다.

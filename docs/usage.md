@@ -1,14 +1,16 @@
 # TimeMachine operator guide
 
+TimeMachine by PLAYCITY BLOCK
+
 [한국어](usage-ko.md) · English
 
 TimeMachine stores Paper `region`, `entities`, and `poi` `.mca` files as FULL and incremental snapshots. It is not a complete server backup.
 
 ## Requirements
 
-- Paper 26.2 build 111 or newer in the 26.2 line
-- Java 25
-- Folia is not supported
+- A Paper server on the `26.2` API line. `plugin.yml` declares `api-version: '26.2'`, and the plugin is built against `paper-api 26.2.build.111-stable`.
+- Java 25 or newer (compiled with `--release 25`).
+- Folia is not supported.
 
 ## Install
 
@@ -166,7 +168,7 @@ java -jar Timemachine-<version>.jar restore verify --snapshot <snapshotId>
 java -jar Timemachine-<version>.jar restore export --snapshot <snapshotId> --output <new-directory>
 ```
 
-Use `--store <path>` for a non-default primary store and repeat `--archive <path>` for archive roots. Add `--lang en` or `--lang ko` anywhere in the command.
+Use `--store <path>` for a non-default primary store and repeat `--archive <path>` for archive roots. `restore list` also accepts `--limit <1-1000>` (default 20). Add `--lang en` or `--lang ko` anywhere in the command. Exit codes are `0` success, `1` I/O or runtime error, `2` usage error, and `3` verification failure.
 
 Export verifies the chain, writes into a new directory, and checks every restored file. It rejects existing destinations, paths overlapping storage, and symbolic links. It never overwrites a live world.
 

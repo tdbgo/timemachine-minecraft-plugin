@@ -64,7 +64,7 @@ plugins/Timemachine/
     state/current-index.tsv.bak
     staging/
     retention-trash/
-    snapshots/YYYY/<snapshot-id>/
+    snapshots/<year>/<snapshot-directory>/
       files/worlds/<world-uuid>/<scope>/r.<x>.<z>.mca
       snapshot.properties
       worlds.tsv
@@ -74,7 +74,7 @@ plugins/Timemachine/
       restore-notes.txt
 ```
 
-Configuration may place the backup root, archive roots, and SQLite file elsewhere.
+Configuration may place the backup root, archive roots, and SQLite file elsewhere. A snapshot ID is its path relative to `snapshots/`, so it includes the year directory — for example `2026/2026-08-16_04-00-00-123_manual_1a2b3c4d`, where the timestamp uses `schedule.timezone`.
 
 ## Verification and restore
 

@@ -90,8 +90,8 @@ plugins/Timemachine/
     retention-trash/
       <삭제 전 원자적 이동에 사용하는 플러그인 소유 디렉터리>/
     snapshots/
-      YYYY/
-        <snapshot-id>/
+      <year>/
+        <snapshot-directory>/
           files/
             worlds/<world-uuid>/<scope>/r.<x>.<z>.mca
           snapshot.properties
@@ -102,7 +102,7 @@ plugins/Timemachine/
           restore-notes.txt
 ```
 
-설정에 따라 SQLite 파일과 backup root는 다른 위치를 사용할 수 있습니다.
+설정에 따라 SQLite 파일과 backup root는 다른 위치를 사용할 수 있습니다. snapshot ID는 `snapshots/` 기준 상대 경로이므로 연도 디렉터리를 포함합니다(예: `2026/2026-08-16_04-00-00-123_manual_1a2b3c4d`).
 
 ## 무결성 검증
 
@@ -126,7 +126,7 @@ plugins/Timemachine/
 1. target에서 FULL까지 전체 체인을 검증합니다.
 2. 검색 가능한 저장소를 한 번 조사해 검증된 체인의 모든 실제 위치를 고정합니다.
 3. 체인의 변경·삭제 항목을 순서대로 합쳐 target 시점의 최종 파일 집합을 계산합니다.
-4. `worlds.tsv`의 source path와 NamespacedKey가 검증된 Paper 26.1+ suffix로 함께 끝날 때만 `world/dimensions/<namespace>/<dimension>` 상대 경로를 구성합니다. 절대 source path 자체는 출력 경로로 사용하지 않습니다.
+4. `worlds.tsv`의 source path가 해당 월드 NamespacedKey에서 만든 `/dimensions/<namespace>/<dimension>` suffix로 끝날 때만 `<world-root>/dimensions/<namespace>/<dimension>` 상대 경로를 구성합니다. 절대 source path 자체는 출력 경로로 사용하지 않습니다.
 5. 출력과 저장소의 경로 중첩, 기존 출력, 심볼릭 링크를 거부합니다.
 6. 출력 부모 아래 임시 디렉터리에 복사하고 각 파일의 크기와 SHA-256을 다시 확인합니다.
 7. 모든 작업이 성공한 뒤에만 임시 디렉터리를 최종 출력 이름으로 이동합니다.
