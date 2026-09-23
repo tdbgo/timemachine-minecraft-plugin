@@ -165,10 +165,11 @@ Installing the export into a server is your step, on purpose. Keep the original 
 | `/tmb help [advanced\|config\|permissions]` | none | Shows only what the sender may run |
 | `/tmb backup [world] [--full] [--message <text>]` | `timemachine.backup` | World by name, NamespacedKey, or UUID. Put `--message` last; it consumes the rest of the line |
 | `/tmb status` | `timemachine.status` | Runtime state, live progress, last result, next scheduled run |
-| `/tmb doctor` | `timemachine.doctor` | Storage, free space, change detection, chain health, database, retention, worlds, warnings |
+| `/tmb doctor` | `timemachine.doctor` | Storage, free space, change detection, chain health, database, retention, failed staging, worlds, warnings |
 | `/tmb history [count]` | `timemachine.history` | `count` is clamped to 1–20, default 5 |
 | `/tmb verify <snapshotId>` | `timemachine.verify` | Verifies the snapshot and its whole chain |
 | `/tmb prune [confirm <token>]` | `timemachine.prune` | Preview without arguments; requires `retention.enabled` |
+| `/tmb cleanup [confirm <token>]` | `timemachine.prune` | Preview and remove only failure-marked staging directories |
 | `/tmb reconcile` | `timemachine.reconcile` | Requires `database.enabled` |
 | `/tmb reload` | `timemachine.reload` | Refused while an operation is running; a rejected reload keeps the current runtime |
 
@@ -182,7 +183,7 @@ Three grouped roles are provided:
 
 `viewer` and `operator` default to no one; assign them in your permission plugin. The individual `timemachine.*` nodes default to op and remain available for custom roles.
 
-Only one operation — backup, verify, prune, reconcile, or reload — runs at a time. World access happens on the server thread; scanning, hashing, copying, SQLite work, and verification run on TimeMachine's own threads.
+Only one operation — backup, verify, prune, cleanup, reconcile, or reload — runs at a time. World access happens on the server thread; scanning, hashing, copying, SQLite work, and verification run on TimeMachine's own threads.
 
 ### Language
 
@@ -257,11 +258,15 @@ plugins/Timemachine/
 
 Snapshot metadata is written and fsynced before the staging directory is moved into place, and the tracked-file index is committed through a temporary file and an atomic replace. If the index commit fails after a snapshot was published, the snapshot is quarantined into `staging/` and a new FULL baseline is required.
 
+Interrupted or failed copies remain in `staging/` with a `failure.txt` marker for inspection. `/tmb doctor` reports their disk usage. `/tmb cleanup` previews only failure-marked directories and prints a token; `/tmb cleanup confirm <token>` deletes exactly that unchanged preview. An active staging directory without `failure.txt` is never selected.
+
 The primary store, archive roots, and the SQLite file must not overlap each other or any world directory. TimeMachine checks this at startup, at reload, and again before every backup, and refuses to run if it finds an overlap.
 
 ### Database
 
 The SQLite file is a local search and metadata index — history, snapshot status, and schedule baselines. Snapshot directories remain the source of truth, and the index can be rebuilt with `/tmb reconcile`. Set `database.enabled: false` to run without it; `/tmb history` then reads the snapshot files directly, and `/tmb reconcile` becomes unavailable.
+
+If the configured SQLite index cannot be opened, TimeMachine logs the failure and continues backing up with filesystem history. `/tmb doctor` reports the degraded state, and reconcile stays unavailable until the database is repaired and TimeMachine is reloaded or restarted.
 
 The schema version is checked on open. A database written by a newer TimeMachine is rejected rather than migrated downward.
 
@@ -280,6 +285,7 @@ On start, TimeMachine merges any missing keys from the bundled defaults into you
 Three legacy keys are migrated automatically when the modern key is absent: `schedule.clock-times` → `schedule.daily-times`, `schedule.run-on-startup-if-missed` → `schedule.catch-up-on-startup`, `backup.max-copy-threads` → `backup.copy-threads`.
 
 Downgrading is not supported. A `config.yml` whose `config-version` is newer than the running plugin supports is rejected, and the plugin disables itself rather than reinterpret settings it does not understand. Keep the `config.backup-*.yml` file if you may need to roll back.
+`config-version` must be an unquoted integer. If its type is invalid or a required configuration section has the wrong type, automatic merging stops without rewriting the original file.
 
 An index written in the older v1 format, or one recovered from its `.bak` copy, is accepted but marked as needing a new baseline: the next unfiltered backup becomes a FULL. Existing snapshots are never rewritten by an upgrade.
 
@@ -309,6 +315,7 @@ An index written in the older v1 format, or one recovered from its `.bak` copy, 
 | `SQLite metadata index is disabled` | `database.enabled` is `false`. `/tmb reconcile` needs it. |
 | Snapshots moved and now `MISSING` | Add their directory to `storage.archive-roots`, `/tmb reload`, then `/tmb reconcile`. |
 | Prune token does not match | The inventory changed after the preview. Run `/tmb prune` again. |
+| Failed staging warning | Run `/tmb cleanup`, review the count and size, then use the printed confirmation command. |
 | `Retention warning` after a backup | Automatic retention aborted on a safety check. The backup succeeded and nothing was deleted; run `/tmb prune` to see the reason. |
 | Reload rejected | Candidate settings failed validation. The previous runtime is still active; the console has the detail. |
 | Export refuses the output path | The destination exists, overlaps backup storage, or contains a symbolic link. Choose a fresh directory elsewhere. |

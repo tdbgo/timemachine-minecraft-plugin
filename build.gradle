@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'dev.playcity'
-version = '0.4.0'
+version = '0.4.3'
 
 def paperApiVersion = providers.gradleProperty('paperApiVersion').getOrElse('26.2.build.111-stable')
 def toolchainJavaVersion = providers.gradleProperty('javaVersion').map { it.toInteger() }.getOrElse(25)

@@ -50,6 +50,13 @@ class RestoreServiceTest {
     }
 
     @Test
+    void rejectsARestoreThatCannotFitBeforeCopyingFiles() throws Exception {
+        assertThrows(IOException.class, () -> RestoreService.ensureRestoreSpace(
+                temporaryDirectory,
+                Long.MAX_VALUE));
+    }
+
+    @Test
     void verifiesAndExportsAFullIncrementalChainIntoThePaper26DimensionLayout() throws Exception {
         Path paperWorldPath = temporaryDirectory.resolve(
                 "server/world/dimensions/minecraft/overworld");

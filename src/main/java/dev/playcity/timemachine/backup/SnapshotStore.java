@@ -3,6 +3,7 @@ package dev.playcity.timemachine.backup;
 import dev.playcity.timemachine.i18n.LanguageMode;
 import dev.playcity.timemachine.i18n.LocalizedMessage;
 import dev.playcity.timemachine.i18n.MessageCatalog;
+import dev.playcity.timemachine.io.FileTreeOperations;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -11,16 +12,21 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -131,14 +137,7 @@ public final class SnapshotStore {
 
     public void discardStaging(Path stagingDirectory) throws IOException {
         Path validated = requireDirectChild(stagingRoot, stagingDirectory, "staging directory");
-        if (!Files.exists(validated, LinkOption.NOFOLLOW_LINKS)) {
-            return;
-        }
-        try (Stream<Path> stream = Files.walk(validated)) {
-            for (Path path : stream.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
-            }
-        }
+        FileTreeOperations.deleteRecursively(validated);
     }
 
     public void markFailed(Path stagingDirectory, String message) {
@@ -156,6 +155,57 @@ public final class SnapshotStore {
                     StandardOpenOption.WRITE);
         } catch (IOException ignored) {
         }
+    }
+
+    public FailedStagingPlan planFailedStagingCleanup() throws IOException {
+        if (!Files.isDirectory(stagingRoot, LinkOption.NOFOLLOW_LINKS)) {
+            return new FailedStagingPlan(List.of(), 0L, 0L, "");
+        }
+
+        List<FailedStagingEntry> entries = new ArrayList<>();
+        try (Stream<Path> stream = Files.list(stagingRoot)) {
+            for (Path candidate : stream.sorted().toList()) {
+                if (!Files.isDirectory(candidate, LinkOption.NOFOLLOW_LINKS)
+                        || !isRegularFile(candidate.resolve("failure.txt"))) {
+                    continue;
+                }
+                entries.add(inspectFailedStaging(candidate));
+            }
+        }
+
+        long files = 0L;
+        long bytes = 0L;
+        for (FailedStagingEntry entry : entries) {
+            files = addSaturated(files, entry.files());
+            bytes = addSaturated(bytes, entry.bytes());
+        }
+        String token = entries.isEmpty() ? "" : cleanupToken(entries);
+        return new FailedStagingPlan(entries, files, bytes, token);
+    }
+
+    public FailedStagingCleanupResult cleanupFailedStaging(FailedStagingPlan expected) throws IOException {
+        if (expected == null || expected.entries().isEmpty() || expected.token().isBlank()) {
+            throw new IOException("No failed staging cleanup plan is available.");
+        }
+        FailedStagingPlan current = planFailedStagingCleanup();
+        if (!current.token().equalsIgnoreCase(expected.token())
+                || !current.entries().equals(expected.entries())) {
+            throw new IOException("Failed staging inventory changed; run cleanup preview again.");
+        }
+
+        for (FailedStagingEntry entry : expected.entries()) {
+            Path candidate = stagingRoot.resolve(entry.directoryName()).normalize();
+            Path validated = requireDirectChild(stagingRoot, candidate, "failed staging directory");
+            if (!isRegularFile(validated.resolve("failure.txt"))) {
+                throw new IOException("Failure marker disappeared; run cleanup preview again: "
+                        + entry.directoryName());
+            }
+            discardStaging(validated);
+        }
+        return new FailedStagingCleanupResult(
+                expected.entries().size(),
+                expected.files(),
+                expected.bytes());
     }
 
     public boolean quarantineCommitted(Path committedDirectory, String message) {
@@ -350,22 +400,35 @@ public final class SnapshotStore {
     }
 
     private Optional<SnapshotHistoryEntry> findLatest(Predicate<SnapshotHistoryEntry> predicate) {
-        if (!Files.isDirectory(snapshotsRoot)) {
-            return Optional.empty();
+        SnapshotHistoryEntry latest = null;
+        for (int rootIndex = 0; rootIndex < searchableRoots.size(); rootIndex++) {
+            Path root = searchableRoots.get(rootIndex);
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            String status = rootIndex == 0 ? "LOCAL" : "ARCHIVED";
+            String storageName = rootIndex == 0 ? "primary" : "archive-" + rootIndex;
+            try (Stream<Path> stream = Files.find(
+                    root,
+                    MAX_SCAN_DEPTH,
+                    (path, attributes) -> attributes.isRegularFile()
+                            && path.getFileName().toString().equals(PROPERTIES_FILE))) {
+                var iterator = stream.iterator();
+                while (iterator.hasNext()) {
+                    Optional<SnapshotHistoryEntry> candidate = readHistoryEntry(
+                            iterator.next(),
+                            status,
+                            storageName);
+                    if (candidate.isPresent()
+                            && predicate.test(candidate.get())
+                            && (latest == null || candidate.get().createdAt().isAfter(latest.createdAt()))) {
+                        latest = candidate.get();
+                    }
+                }
+            } catch (IOException ignored) {
+            }
         }
-        try (Stream<Path> stream = Files.find(
-                snapshotsRoot,
-                3,
-                (path, attributes) -> attributes.isRegularFile()
-                        && path.getFileName().toString().equals(PROPERTIES_FILE))) {
-            return stream
-                    .map(this::readHistoryEntry)
-                    .flatMap(Optional::stream)
-                    .filter(predicate)
-                    .max(Comparator.comparing(SnapshotHistoryEntry::createdAt));
-        } catch (IOException ex) {
-            return Optional.empty();
-        }
+        return Optional.ofNullable(latest);
     }
 
     private void writeMetadataFiles(
@@ -578,6 +641,64 @@ public final class SnapshotStore {
         }
     }
 
+    private FailedStagingEntry inspectFailedStaging(Path directory) throws IOException {
+        long[] inventory = new long[3];
+        Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attributes) throws IOException {
+                update(attributes);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path path, BasicFileAttributes attributes) throws IOException {
+                update(attributes);
+                if (attributes.isRegularFile()) {
+                    inventory[0] = addSaturated(inventory[0], 1L);
+                    inventory[1] = addSaturated(inventory[1], attributes.size());
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            private void update(BasicFileAttributes attributes) throws IOException {
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new IOException("Failed staging inspection was interrupted.");
+                }
+                inventory[2] = Math.max(inventory[2], attributes.lastModifiedTime().toMillis());
+            }
+        });
+        return new FailedStagingEntry(
+                directory.getFileName().toString(),
+                inventory[0],
+                inventory[1],
+                Instant.ofEpochMilli(inventory[2]));
+    }
+
+    private String cleanupToken(List<FailedStagingEntry> entries) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (FailedStagingEntry entry : entries) {
+                String line = entry.directoryName()
+                        + '\t' + entry.files()
+                        + '\t' + entry.bytes()
+                        + '\t' + entry.lastModifiedAt().toEpochMilli()
+                        + '\n';
+                digest.update(line.getBytes(StandardCharsets.UTF_8));
+            }
+            return HexFormat.of().formatHex(digest.digest(), 0, 6);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private long addSaturated(long left, long right) {
+        try {
+            return Math.addExact(left, right);
+        } catch (ArithmeticException ex) {
+            return Long.MAX_VALUE;
+        }
+    }
+
     private Path resolvePortableRelative(Path root, String relativePath) {
         if (relativePath == null
                 || relativePath.isBlank()
@@ -693,6 +814,29 @@ public final class SnapshotStore {
             String status,
             String storageName,
             Path snapshotPath) {
+    }
+
+    public record FailedStagingEntry(
+            String directoryName,
+            long files,
+            long bytes,
+            Instant lastModifiedAt) {
+    }
+
+    public record FailedStagingPlan(
+            List<FailedStagingEntry> entries,
+            long files,
+            long bytes,
+            String token) {
+        public FailedStagingPlan {
+            entries = List.copyOf(entries);
+        }
+    }
+
+    public record FailedStagingCleanupResult(
+            int directories,
+            long files,
+            long bytes) {
     }
 
     public record VerificationResult(

@@ -17,5 +17,8 @@ public record BackupDiagnostics(
         String lastSnapshotId,
         String baseSnapshotId,
         SnapshotChainHealth chainHealth,
-        Instant latestSnapshotAt) {
+        Instant latestSnapshotAt,
+        int failedStagingDirectories,
+        long failedStagingFiles,
+        long failedStagingBytes) {
 }

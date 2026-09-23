@@ -1,5 +1,6 @@
 package dev.playcity.timemachine.backup;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -64,6 +65,25 @@ class BackupMaintenanceServiceTest {
             assertTrue(refresh.restored());
             assertTrue(refresh.health().healthy());
             assertFalse(context.indexState.get().baselineRequired());
+        } finally {
+            context.close(true);
+        }
+    }
+
+    @Test
+    void filesystemHistoryIncludesArchiveRootsWhenTheDatabaseIsUnavailable() throws Exception {
+        Path storage = temporaryDirectory.resolve("storage");
+        Path archive = temporaryDirectory.resolve("archive");
+        writeSnapshot(archive, "2026/archived", SnapshotKind.FULL, "", "2026/archived");
+        SnapshotStore store = new SnapshotStore(storage, List.of(archive));
+        CurrentIndexStore.IndexState state = CurrentIndexStore.IndexState.baselineRequired(false, false);
+        BackupRuntimeContext context = context(store, state, store.inspectActiveChain(state));
+        try {
+            List<SnapshotStore.SnapshotHistoryEntry> history = service().loadHistory(context, 5);
+
+            assertEquals(1, history.size());
+            assertEquals("2026/archived", history.getFirst().snapshotId());
+            assertEquals("ARCHIVED", history.getFirst().status());
         } finally {
             context.close(true);
         }

@@ -47,6 +47,7 @@ For every loaded world, TimeMachine copies `.mca` files from `region` (chunks an
 - Offline `restore list`, `restore verify`, and `restore export` from the same JAR
 - Local SQLite search index with filesystem reconciliation for snapshots moved to archive storage
 - Live progress, `/tmb doctor` diagnostics, and daily or monthly schedules with burst-free catch-up
+- Failure-marked staging detection with preview-and-confirm cleanup; active copies are excluded
 - English and Korean output, following each player's client language by default
 
 ### Quick start

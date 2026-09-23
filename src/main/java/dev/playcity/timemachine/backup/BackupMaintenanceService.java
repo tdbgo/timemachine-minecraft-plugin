@@ -16,6 +16,7 @@ final class BackupMaintenanceService {
     private final Logger logger;
     private final ProgressTracker progressTracker;
     private final AtomicReference<ChainRetentionService.PrunePlan> pendingPrunePlan = new AtomicReference<>();
+    private final AtomicReference<SnapshotStore.FailedStagingPlan> pendingCleanupPlan = new AtomicReference<>();
 
     BackupMaintenanceService(Logger logger, ProgressTracker progressTracker) {
         this.logger = logger;
@@ -26,8 +27,13 @@ final class BackupMaintenanceService {
         return pendingPrunePlan.get();
     }
 
-    void clearPendingPrunePlan() {
+    SnapshotStore.FailedStagingPlan pendingCleanupPlan() {
+        return pendingCleanupPlan.get();
+    }
+
+    void clearPendingPlans() {
         pendingPrunePlan.set(null);
+        pendingCleanupPlan.set(null);
     }
 
     void executeReconcile(BackupRuntimeContext context, BackupManager.MessageSink sink) {
@@ -147,6 +153,59 @@ final class BackupMaintenanceService {
         }
     }
 
+    void executeCleanupPlan(BackupRuntimeContext context, BackupManager.MessageSink sink) {
+        try {
+            SnapshotStore.FailedStagingPlan plan = context.snapshotStore.planFailedStagingCleanup();
+            if (plan.entries().isEmpty()) {
+                pendingCleanupPlan.set(null);
+                progressTracker.complete("No failed staging directories were found");
+                sink.accept("backup.cleanup_none");
+                return;
+            }
+            pendingCleanupPlan.set(plan);
+            progressTracker.complete("Awaiting cleanup confirmation " + plan.token());
+            sink.accept(
+                    "backup.cleanup_preview",
+                    plan.entries().size(),
+                    plan.files(),
+                    humanBytes(plan.bytes()));
+            plan.entries().stream().limit(5).forEach(entry -> sink.accept(
+                    "backup.cleanup_entry",
+                    entry.directoryName(),
+                    entry.files(),
+                    humanBytes(entry.bytes())));
+            if (plan.entries().size() > 5) {
+                sink.accept("backup.additional_staging", plan.entries().size() - 5);
+            }
+            sink.accept("backup.cleanup_confirm", plan.token());
+        } catch (Exception ex) {
+            pendingCleanupPlan.set(null);
+            progressTracker.fail(exceptionMessage(ex));
+            sink.accept("backup.cleanup_plan_failed", exceptionMessage(ex));
+        }
+    }
+
+    void executeCleanupConfirm(
+            BackupRuntimeContext context,
+            SnapshotStore.FailedStagingPlan plan,
+            BackupManager.MessageSink sink) {
+        try {
+            SnapshotStore.FailedStagingCleanupResult result =
+                    context.snapshotStore.cleanupFailedStaging(plan);
+            pendingCleanupPlan.compareAndSet(plan, null);
+            progressTracker.complete("Deleted " + result.directories() + " failed staging directories");
+            sink.accept(
+                    "backup.cleanup_completed",
+                    result.directories(),
+                    result.files(),
+                    humanBytes(result.bytes()));
+        } catch (Exception ex) {
+            pendingCleanupPlan.compareAndSet(plan, null);
+            progressTracker.fail(exceptionMessage(ex));
+            sink.accept("backup.cleanup_failed", exceptionMessage(ex));
+        }
+    }
+
     void runAutomaticRetention(BackupRuntimeContext context, BackupManager.MessageSink sink) {
         if (!context.settings.retention().enabled()) {
             return;
@@ -225,7 +284,7 @@ final class BackupMaintenanceService {
                 return history;
             }
         }
-        return context.snapshotStore.loadHistory(limit);
+        return context.snapshotStore.loadSearchableHistory(limit);
     }
 
     private ChainRetentionService retentionService(BackupRuntimeContext context) {

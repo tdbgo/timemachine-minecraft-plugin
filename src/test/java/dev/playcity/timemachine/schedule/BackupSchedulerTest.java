@@ -26,8 +26,10 @@ class BackupSchedulerTest {
                 Optional.of(Instant.parse("2026-01-01T05:00:00Z")),
                 Optional.of(Instant.parse("2026-01-01T05:00:00Z")));
         BackupScheduler scheduler = new BackupScheduler(null, operations, settings(ZoneId.of("UTC")));
+        ZonedDateTime now = ZonedDateTime.parse("2026-01-02T05:00:00Z");
+        scheduler.initializeAt(now);
 
-        scheduler.tickAt(ZonedDateTime.parse("2026-01-02T05:00:00Z"));
+        scheduler.tickAt(now);
 
         assertEquals(1, operations.requests.size());
         assertEquals("catchup", operations.requests.getFirst().trigger());
@@ -40,8 +42,10 @@ class BackupSchedulerTest {
                 Optional.of(Instant.parse("2026-01-01T00:00:00Z")),
                 Optional.empty());
         BackupScheduler scheduler = new BackupScheduler(null, operations, settings(ZoneId.of("UTC")));
+        ZonedDateTime now = ZonedDateTime.parse("2026-01-05T05:00:00Z");
+        scheduler.initializeAt(now);
 
-        scheduler.tickAt(ZonedDateTime.parse("2026-01-05T05:00:00Z"));
+        scheduler.tickAt(now);
 
         assertEquals(1, operations.requests.size());
         assertEquals("catchup", operations.requests.getFirst().trigger());
@@ -73,6 +77,21 @@ class BackupSchedulerTest {
 
         assertTrue(next.at().isAfter(ZonedDateTime.of(2026, 3, 8, 1, 55, 0, 0, zone)));
         assertEquals(3, next.at().getHour());
+    }
+
+    @Test
+    void stopPreventsACatchupFromStartingAfterShutdownBegins() {
+        FakeOperations operations = new FakeOperations(
+                Optional.of(Instant.parse("2026-01-01T00:00:00Z")),
+                Optional.empty());
+        BackupScheduler scheduler = new BackupScheduler(null, operations, settings(ZoneId.of("UTC")));
+        ZonedDateTime now = ZonedDateTime.parse("2026-01-05T05:00:00Z");
+        scheduler.initializeAt(now);
+
+        scheduler.stop();
+        scheduler.tickAt(now);
+
+        assertTrue(operations.requests.isEmpty());
     }
 
     private TimeMachineSettings settings(ZoneId zone) {

@@ -51,6 +51,8 @@ final class TimeMachineHelp {
                 TimeMachineCommandReference.command("verify <snapshotId>"));
         visible += sendCommandIfAllowed(sender, TimeMachinePermissions.PRUNE,
                 TimeMachineCommandReference.command("prune [confirm <token>]"));
+        visible += sendCommandIfAllowed(sender, TimeMachinePermissions.PRUNE,
+                TimeMachineCommandReference.command("cleanup [confirm <token>]"));
         visible += sendCommandIfAllowed(sender, TimeMachinePermissions.RECONCILE,
                 TimeMachineCommandReference.command("reconcile"));
         visible += sendCommandIfAllowed(sender, TimeMachinePermissions.RELOAD,

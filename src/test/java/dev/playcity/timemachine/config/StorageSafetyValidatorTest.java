@@ -27,8 +27,18 @@ class StorageSafetyValidatorTest {
                 settings,
                 List.of(new StorageSafetyValidator.WorldPath("world", world)));
 
-        assertTrue(issues.size() >= 2);
-        assertTrue(issues.stream().allMatch(issue -> issue.contains("overlaps world 'world'")));
+        assertTrue(issues.stream().filter(issue -> issue.contains("overlaps world 'world'")).count() >= 2);
+    }
+
+    @Test
+    void rejectsASqliteFileInsideTheBackupStore() {
+        Path storage = temporaryDirectory.resolve("backups");
+        TimeMachineSettings settings = settings(storage, storage.resolve("metadata.db"));
+
+        List<String> issues = StorageSafetyValidator.validate(settings, List.of());
+
+        assertTrue(issues.stream().anyMatch(issue -> issue.contains("SQLite path")
+                && issue.contains("overlaps backup storage")));
     }
 
     private TimeMachineSettings settings(Path storageRoot, Path databaseFile) {

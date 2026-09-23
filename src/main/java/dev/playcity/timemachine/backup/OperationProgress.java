@@ -21,7 +21,8 @@ public record OperationProgress(
 
     public boolean active() {
         return switch (phase) {
-            case PREPARING, SAVING, SCANNING, HASHING, COPYING, COMMITTING, VERIFYING, RECONCILING, PRUNING -> true;
+            case PREPARING, SAVING, SCANNING, HASHING, COPYING, COMMITTING, VERIFYING, RECONCILING, PRUNING,
+                    CLEANING -> true;
             case IDLE, COMPLETE, FAILED, CANCELLED -> false;
         };
     }
@@ -55,6 +56,7 @@ public record OperationProgress(
         VERIFYING,
         RECONCILING,
         PRUNING,
+        CLEANING,
         COMPLETE,
         FAILED,
         CANCELLED

@@ -165,10 +165,11 @@ java -jar Timemachine-<version>.jar version
 | `/tmb help [advanced\|config\|permissions]` | 없음 | 실행 권한이 있는 항목만 표시 |
 | `/tmb backup [world] [--full] [--message <text>]` | `timemachine.backup` | 월드는 이름, NamespacedKey, UUID로 지정. `--message`는 맨 뒤에 두며 이후 전체를 메시지로 사용 |
 | `/tmb status` | `timemachine.status` | 실행 상태, 실시간 진행률, 마지막 결과, 다음 예약 실행 |
-| `/tmb doctor` | `timemachine.doctor` | 저장소, 여유 공간, 변경 감지, 체인 상태, 데이터베이스, 보존, 월드, 경고 |
+| `/tmb doctor` | `timemachine.doctor` | 저장소, 여유 공간, 변경 감지, 체인 상태, 데이터베이스, 보존, 실패 임시 데이터, 월드, 경고 |
 | `/tmb history [count]` | `timemachine.history` | `count`는 1–20으로 제한, 기본 5 |
 | `/tmb verify <snapshotId>` | `timemachine.verify` | 스냅샷과 전체 체인 검증 |
 | `/tmb prune [confirm <token>]` | `timemachine.prune` | 인자 없이 실행하면 미리보기. `retention.enabled` 필요 |
+| `/tmb cleanup [confirm <token>]` | `timemachine.prune` | 실패 표시가 있는 staging만 미리보고 정리 |
 | `/tmb reconcile` | `timemachine.reconcile` | `database.enabled` 필요 |
 | `/tmb reload` | `timemachine.reload` | 작업 중에는 거부. 거부된 reload는 기존 런타임을 유지 |
 
@@ -182,7 +183,7 @@ java -jar Timemachine-<version>.jar version
 
 `viewer`와 `operator`는 기본적으로 아무에게도 부여되지 않으므로 권한 플러그인에서 지정하십시오. 개별 `timemachine.*` 노드는 기본값이 op이며 세부 역할 구성에 그대로 사용할 수 있습니다.
 
-backup, verify, prune, reconcile, reload는 한 번에 하나만 실행됩니다. 월드 접근은 서버 스레드에서 이루어지고 스캔, 해시, 복사, SQLite 작업, 검증은 TimeMachine 전용 스레드에서 실행됩니다.
+backup, verify, prune, cleanup, reconcile, reload는 한 번에 하나만 실행됩니다. 월드 접근은 서버 스레드에서 이루어지고 스캔, 해시, 복사, SQLite 작업, 검증은 TimeMachine 전용 스레드에서 실행됩니다.
 
 ### 언어
 
@@ -257,11 +258,15 @@ plugins/Timemachine/
 
 스냅샷 metadata는 staging 디렉터리를 옮기기 전에 기록하고 fsync하며, 추적 파일 인덱스는 임시 파일과 원자적 교체로 커밋합니다. 스냅샷을 게시한 뒤 인덱스 커밋이 실패하면 해당 스냅샷을 `staging/`으로 격리하고 새 FULL 기준점을 요구합니다.
 
+중단되거나 실패한 복사본은 확인할 수 있도록 `failure.txt`와 함께 `staging/`에 남습니다. `/tmb doctor`가 사용 용량을 표시합니다. `/tmb cleanup`은 실패 표시가 있는 디렉터리만 미리보고 토큰을 출력하며, `/tmb cleanup confirm <token>`은 미리보기 이후 목록이 바뀌지 않았을 때만 삭제합니다. `failure.txt`가 없는 진행 중 staging은 선택하지 않습니다.
+
 주 저장소, archive root, SQLite 파일은 서로 겹치거나 월드 디렉터리와 겹칠 수 없습니다. TimeMachine은 시작 시, reload 시, 그리고 모든 백업 직전에 이를 확인하고 겹치면 실행을 거부합니다.
 
 ### 데이터베이스
 
 SQLite 파일은 로컬 검색·metadata 인덱스입니다. 기록 조회, 스냅샷 상태, 일정 기준 시각에 사용합니다. 원본은 여전히 스냅샷 디렉터리이며 인덱스는 `/tmb reconcile`로 다시 만들 수 있습니다. `database.enabled: false`로 두면 인덱스 없이 동작하며, `/tmb history`는 스냅샷 파일을 직접 읽고 `/tmb reconcile`은 사용할 수 없습니다.
+
+설정된 SQLite 인덱스를 열 수 없으면 TimeMachine은 실패 원인을 로그에 남기고 파일 기반 이력으로 백업을 계속합니다. `/tmb doctor`는 이 제한 상태를 표시하며, DB를 복구하고 TimeMachine을 reload 또는 재시작할 때까지 reconcile은 사용할 수 없습니다.
 
 스키마 버전은 열 때 확인합니다. 더 새로운 TimeMachine이 만든 데이터베이스는 하위 버전으로 변환하지 않고 거부합니다.
 
@@ -280,6 +285,7 @@ TimeMachine은 외부 네트워크 통신을 하지 않습니다. 소켓을 열�
 다음 세 개의 구 키는 새 키가 없을 때 자동으로 이전됩니다. `schedule.clock-times` → `schedule.daily-times`, `schedule.run-on-startup-if-missed` → `schedule.catch-up-on-startup`, `backup.max-copy-threads` → `backup.copy-threads`.
 
 다운그레이드는 지원하지 않습니다. `config-version`이 실행 중인 플러그인이 지원하는 값보다 크면 설정을 임의로 해석하지 않고 거부하며 플러그인이 스스로 비활성화됩니다. 되돌릴 가능성이 있다면 `config.backup-*.yml` 파일을 보관하십시오.
+`config-version`은 따옴표 없는 정수여야 합니다. 값 형식이 잘못되었거나 필요한 설정 섹션이 다른 형식이면 자동 병합을 중단하고 원본 파일을 그대로 둡니다.
 
 구 v1 형식으로 기록된 인덱스나 `.bak` 사본에서 복구한 인덱스는 받아들이되 새 기준점이 필요한 상태로 표시합니다. 다음 필터 없는 백업이 FULL이 됩니다. 업그레이드가 기존 스냅샷을 다시 쓰는 일은 없습니다.
 
@@ -309,6 +315,7 @@ TimeMachine은 외부 네트워크 통신을 하지 않습니다. 소켓을 열�
 | `SQLite metadata index is disabled` | `database.enabled`가 `false`입니다. `/tmb reconcile`에는 필요합니다. |
 | 옮긴 스냅샷이 `MISSING`으로 표시 | 해당 경로를 `storage.archive-roots`에 추가하고 `/tmb reload` 후 `/tmb reconcile`을 실행하십시오. |
 | prune 토큰 불일치 | 미리보기 이후 인벤토리가 바뀌었습니다. `/tmb prune`을 다시 실행하십시오. |
+| 실패 임시 데이터 경고 | `/tmb cleanup`에서 개수와 용량을 확인한 뒤 출력된 확인 명령을 실행하십시오. |
 | 백업 후 `Retention warning` | 자동 보존 정리가 안전 검사에서 중단되었습니다. 백업은 성공했고 삭제된 것은 없습니다. 이유는 `/tmb prune`으로 확인하십시오. |
 | reload 거부 | 후보 설정이 검증을 통과하지 못했습니다. 기존 런타임이 계속 동작하며 자세한 내용은 콘솔에 있습니다. |
 | export가 출력 경로를 거부 | 대상이 이미 존재하거나, 백업 저장소와 겹치거나, 심볼릭 링크를 포함합니다. 다른 위치의 새 디렉터리를 사용하십시오. |

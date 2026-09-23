@@ -45,6 +45,7 @@ language: ko # 또는 en
 /timemachine history [count]
 /timemachine verify <snapshotId>
 /timemachine prune [confirm <token>]
+/timemachine cleanup [confirm <token>]
 /timemachine reconcile
 /timemachine reload
 ```
@@ -108,6 +109,8 @@ database:
 ```
 
 SQLite는 history와 snapshot 위치 상태를 관리하는 보조 인덱스입니다. snapshot 파일이 원본이며 `/timemachine reconcile`로 인덱스를 다시 맞출 수 있습니다. 기본 저장소에서 발견하면 `LOCAL`, archive에서 발견하면 `ARCHIVED`, 어느 검색 경로에도 없으면 `MISSING`으로 갱신합니다. 감사와 재발견을 위해 `MISSING` 행을 DB에서 삭제하지 않습니다. 결과의 `새 누락`은 이번 실행에서 처음 누락 처리된 수이고, `전체 누락`은 이전 실행에서 이미 누락 처리된 항목까지 포함한 현재 총수입니다.
+
+SQLite를 열 수 없어도 백업과 파일 기반 history는 계속 사용할 수 있습니다. `doctor`가 제한 상태를 표시하며, DB를 복구하고 TimeMachine을 reload 또는 재시작하면 reconcile을 다시 사용할 수 있습니다.
 
 `reconcile`은 현재 인덱스가 가리키는 FULL부터 마지막 snapshot까지의 부모 관계도 함께 검사합니다. 이동본이 archive에서 발견되면 증분 백업을 계속하고, 활성 체인의 snapshot이 실제로 사라졌다면 증분을 차단합니다. 이 경우 다음 월드 필터 없는 수동 또는 예약 백업만 새 FULL 기준점으로 승격됩니다. 삭제된 증분 snapshot을 건너뛰어 체인을 이어 붙이지는 않습니다.
 
@@ -241,7 +244,7 @@ TimeMachine은 온라인 또는 자동 in-place restore 명령을 제공하지 �
 ## 상태와 진단
 
 - `/timemachine status`: 현재 작업 단계, 파일·바이트 진행률, 경과 시간, 마지막 백업과 다음 예약을 표시합니다.
-- `/timemachine doctor`: 저장소 쓰기 가능 여부와 여유 공간, 변경 감지 모드, 현재 체인, 보호 scope, SQLite, FULL 일정과 retention 위험을 점검합니다.
+- `/timemachine doctor`: 저장소 쓰기 가능 여부와 여유 공간, 변경 감지 모드, 현재 체인, 보호 scope, SQLite, FULL 일정, retention과 실패 staging 위험을 점검합니다.
 - SAFE/FAST의 실제 측정 조건과 결과는 [변경 감지 벤치마크](change-detection-benchmark.ko.md)를 참고하십시오.
 
 ## 운영 주의 사항
@@ -252,4 +255,5 @@ TimeMachine은 온라인 또는 자동 in-place restore 명령을 제공하지 �
 - snapshot을 수동 이동/삭제했다면 `/timemachine reconcile`을 실행하십시오.
 - 다른 저장소로 이동했다면 먼저 `storage.archive-roots`를 추가하고 `/timemachine reload`를 성공시킨 뒤 `/timemachine reconcile`과 최신 leaf의 `verify`를 실행하십시오.
 - 공간 정리는 개별 snapshot 수동 삭제보다 완전한 비활성 체인만 제거하는 `/timemachine prune`을 권장합니다.
+- 실패 표시가 있는 staging은 `/timemachine cleanup`으로 미리본 뒤 정리하십시오. 진행 중인 staging은 대상에서 제외됩니다.
 - 설정 reload가 실패하면 기존 런타임은 유지됩니다. 콘솔의 구체적인 검증 오류를 수정한 뒤 다시 시도하십시오.

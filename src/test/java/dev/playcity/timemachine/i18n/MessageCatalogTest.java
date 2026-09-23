@@ -9,9 +9,13 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class MessageCatalogTest {
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\d+}");
+
     @Test
     void formatsEnglishAndKoreanMessages() {
         MessageCatalog english = new MessageCatalog(LanguageMode.ENGLISH);
@@ -41,6 +45,10 @@ class MessageCatalogTest {
                         english.getProperty(key),
                         korean.getProperty(key),
                         () -> "Operator-facing diagnostic was not translated: " + key));
+        english.stringPropertyNames().forEach(key -> assertEquals(
+                placeholders(english.getProperty(key)),
+                placeholders(korean.getProperty(key)),
+                () -> "Message placeholders differ between languages: " + key));
     }
 
     @Test
@@ -62,5 +70,12 @@ class MessageCatalogTest {
             }
         }
         return properties;
+    }
+
+    private Set<String> placeholders(String value) {
+        return PLACEHOLDER.matcher(value)
+                .results()
+                .map(result -> result.group())
+                .collect(java.util.stream.Collectors.toSet());
     }
 }

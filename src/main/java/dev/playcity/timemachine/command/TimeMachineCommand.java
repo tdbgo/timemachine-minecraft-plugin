@@ -48,6 +48,7 @@ public final class TimeMachineCommand implements CommandExecutor, TabCompleter {
             case "history" -> handleHistory(sender, args);
             case "verify" -> handleVerify(sender, args);
             case "prune" -> handlePrune(sender, args);
+            case "cleanup" -> handleCleanup(sender, args);
             case "reconcile" -> handleReconcile(sender);
             case "reload" -> handleReload(sender);
             default -> {
@@ -186,6 +187,10 @@ public final class TimeMachineCommand implements CommandExecutor, TabCompleter {
                 text(sender, settings.retention().enabled() ? "label.enabled" : "label.disabled"),
                 settings.retention().minimumChains(),
                 settings.retention().pinnedSnapshots().size());
+        send(sender, "doctor.failed_staging",
+                diagnostics.failedStagingDirectories(),
+                diagnostics.failedStagingFiles(),
+                TimeMachineText.bytes(diagnostics.failedStagingBytes()));
         String scopes = settings.scopes().stream()
                 .map(scope -> scope.directoryName())
                 .sorted()
@@ -206,6 +211,9 @@ public final class TimeMachineCommand implements CommandExecutor, TabCompleter {
         }
         if (diagnostics.changeDetectionMode() == ChangeDetectionMode.FAST) {
             warnings.add(text(sender, "doctor.warning.fast"));
+        }
+        if (settings.database().enabled() && !diagnostics.databaseEnabled()) {
+            warnings.add(text(sender, "doctor.warning.database"));
         }
         if (chainHealth.broken()) {
             String issue = text(
@@ -228,6 +236,12 @@ public final class TimeMachineCommand implements CommandExecutor, TabCompleter {
         }
         if (settings.scopes().size() < 3) {
             warnings.add(text(sender, "doctor.warning.scopes", scopes));
+        }
+        if (diagnostics.failedStagingDirectories() > 0) {
+            warnings.add(text(
+                    sender,
+                    "doctor.warning.failed_staging",
+                    TimeMachineCommandReference.command("cleanup")));
         }
         if (warnings.isEmpty()) {
             send(sender, "doctor.ok");
@@ -320,6 +334,25 @@ public final class TimeMachineCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private boolean handleCleanup(CommandSender sender, String[] args) {
+        BackupManager backupManager = requireActiveManager(sender);
+        if (backupManager == null) {
+            return true;
+        }
+        if (args.length == 1) {
+            send(sender, "cleanup.preview_start");
+            backupManager.startCleanupPlan(sender);
+            return true;
+        }
+        if (args.length == 3 && "confirm".equalsIgnoreCase(args[1])) {
+            backupManager.startCleanupConfirm(args[2], sender);
+            return true;
+        }
+        send(sender, "command.cleanup_usage",
+                TimeMachineCommandReference.command("cleanup [confirm <token>]"));
+        return true;
+    }
+
     private boolean handleReload(CommandSender sender) {
         BackupManager backupManager = plugin.getBackupManager();
         if (backupManager != null && backupManager.isBusy()) {
@@ -376,6 +409,13 @@ public final class TimeMachineCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2
                 && "prune".equalsIgnoreCase(args[0])
+                && sender.hasPermission(TimeMachinePermissions.PRUNE)) {
+            return "confirm".startsWith(args[1].toLowerCase(Locale.ROOT))
+                    ? List.of("confirm")
+                    : List.of();
+        }
+        if (args.length == 2
+                && "cleanup".equalsIgnoreCase(args[0])
                 && sender.hasPermission(TimeMachinePermissions.PRUNE)) {
             return "confirm".startsWith(args[1].toLowerCase(Locale.ROOT))
                     ? List.of("confirm")

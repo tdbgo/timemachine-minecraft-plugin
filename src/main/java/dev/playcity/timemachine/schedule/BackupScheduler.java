@@ -190,6 +190,9 @@ public final class BackupScheduler {
     }
 
     void tickAt(ZonedDateTime now) {
+        if (stopped) {
+            return;
+        }
 
         if (!startupRegularCatchupQueued) {
             queueStartupCatchup(now, false);
@@ -381,6 +384,9 @@ public final class BackupScheduler {
         for (DueSlot slot : pendingSlots.values().stream()
                 .sorted(Comparator.comparing(DueSlot::slotTime))
                 .toList()) {
+            if (stopped) {
+                return;
+            }
             if (executedSlotKeys.contains(slot.key())) {
                 pendingSlots.remove(slot.key());
                 continue;

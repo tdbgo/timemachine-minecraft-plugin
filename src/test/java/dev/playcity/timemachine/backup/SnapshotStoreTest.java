@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -107,6 +108,64 @@ class SnapshotStoreTest {
     }
 
     @Test
+    void previewsAndCleansOnlyFailureMarkedStagingDirectories() throws Exception {
+        SnapshotStore store = new SnapshotStore(temporaryDirectory.resolve("backups"));
+        Path failed = store.createStagingDirectory("failed-copy");
+        Files.writeString(store.filesDirectory(failed).resolve("partial.mca"), "partial", StandardCharsets.UTF_8);
+        store.markFailed(failed, "Backup copy was interrupted.");
+
+        Path active = store.createStagingDirectory("active-copy");
+        Files.writeString(store.filesDirectory(active).resolve("copying.mca"), "active", StandardCharsets.UTF_8);
+
+        SnapshotStore.FailedStagingPlan plan = store.planFailedStagingCleanup();
+        assertEquals(1, plan.entries().size());
+        assertEquals("failed-copy", plan.entries().getFirst().directoryName());
+        assertEquals(2L, plan.files());
+        assertFalse(plan.token().isBlank());
+
+        SnapshotStore.FailedStagingCleanupResult result = store.cleanupFailedStaging(plan);
+        assertEquals(1, result.directories());
+        assertEquals(2L, result.files());
+        assertFalse(Files.exists(failed));
+        assertTrue(Files.isDirectory(active));
+    }
+
+    @Test
+    void refusesCleanupWhenTheFailureInventoryChangedAfterPreview() throws Exception {
+        SnapshotStore store = new SnapshotStore(temporaryDirectory.resolve("backups"));
+        Path first = store.createStagingDirectory("first-failure");
+        store.markFailed(first, "first");
+        SnapshotStore.FailedStagingPlan plan = store.planFailedStagingCleanup();
+
+        Path second = store.createStagingDirectory("second-failure");
+        store.markFailed(second, "second");
+
+        assertThrows(IOException.class, () -> store.cleanupFailedStaging(plan));
+        assertTrue(Files.isDirectory(first));
+        assertTrue(Files.isDirectory(second));
+    }
+
+    @Test
+    void latestSnapshotIncludesSnapshotsMovedToAnArchiveRoot() throws Exception {
+        Path storageRoot = temporaryDirectory.resolve("backups");
+        Path archiveRoot = temporaryDirectory.resolve("archive");
+        writeHistoryMetadata(
+                storageRoot.resolve("snapshots/2026/local/snapshot.properties"),
+                "2026/local",
+                "2026-01-01T00:00:00Z",
+                "INCREMENTAL");
+        writeHistoryMetadata(
+                archiveRoot.resolve("2026/archived/snapshot.properties"),
+                "2026/archived",
+                "2026-01-02T00:00:00Z",
+                "FULL");
+        SnapshotStore store = new SnapshotStore(storageRoot, List.of(archiveRoot));
+
+        assertEquals("2026/archived", store.latestSnapshot().orElseThrow().snapshotId());
+        assertEquals("2026/archived", store.latestSnapshot(true).orElseThrow().snapshotId());
+    }
+
+    @Test
     void rejectsTraversalAndBackslashPathsInSnapshotMetadata() throws Exception {
         SnapshotStore store = new SnapshotStore(temporaryDirectory.resolve("backups"));
         SnapshotStore.SnapshotWorld world = new SnapshotStore.SnapshotWorld(
@@ -167,5 +226,20 @@ class SnapshotStoreTest {
                 Files.getLastModifiedTime(file).toMillis(),
                 Files.size(file),
                 FileHashes.sha256(file));
+    }
+
+    private void writeHistoryMetadata(Path propertiesPath, String snapshotId, String createdAt, String kind)
+            throws IOException {
+        Files.createDirectories(propertiesPath.getParent());
+        Files.writeString(
+                propertiesPath,
+                "snapshot.id=" + snapshotId + "\n"
+                        + "created.at=" + createdAt + "\n"
+                        + "trigger=test\n"
+                        + "snapshot.kind=" + kind + "\n"
+                        + "changed.files=1\n"
+                        + "changed.regionSets=1\n"
+                        + "deleted.files=0\n",
+                StandardCharsets.UTF_8);
     }
 }

@@ -15,6 +15,7 @@ class TimeMachineCommandAccessTest {
         assertEquals(TimeMachinePermissions.HISTORY, TimeMachineCommandAccess.permissionFor("history"));
         assertEquals(TimeMachinePermissions.VERIFY, TimeMachineCommandAccess.permissionFor("verify"));
         assertEquals(TimeMachinePermissions.PRUNE, TimeMachineCommandAccess.permissionFor("prune"));
+        assertEquals(TimeMachinePermissions.PRUNE, TimeMachineCommandAccess.permissionFor("cleanup"));
         assertEquals(TimeMachinePermissions.RECONCILE, TimeMachineCommandAccess.permissionFor("reconcile"));
         assertEquals(TimeMachinePermissions.RELOAD, TimeMachineCommandAccess.permissionFor("reload"));
     }

@@ -9,7 +9,7 @@ prefix: Timemachine
 commands:
   timemachine:
     description: Create, inspect, and verify TimeMachine snapshots
-    usage: /tmb <help|backup|status|doctor|history|verify|prune|reconcile|reload>
+    usage: /tmb <help|backup|status|doctor|history|verify|prune|cleanup|reconcile|reload>
     aliases: [tmb, tm]
 permissions:
   timemachine.backup:
@@ -34,7 +34,7 @@ permissions:
     description: Verify snapshot files and restore chains
     default: op
   timemachine.prune:
-    description: Preview and confirm chain-safe snapshot retention
+    description: Preview and confirm snapshot retention or failed staging cleanup
     default: op
   timemachine.viewer:
     description: Read-only TimeMachine status and history access

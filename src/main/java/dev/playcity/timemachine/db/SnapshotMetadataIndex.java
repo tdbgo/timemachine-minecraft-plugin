@@ -36,6 +36,7 @@ public final class SnapshotMetadataIndex implements AutoCloseable {
     private final List<Path> archiveRoots;
     private final String metaTable;
     private final String snapshotTable;
+    private volatile boolean inventoryReconciled;
 
     public SnapshotMetadataIndex(
             Logger logger,
@@ -138,14 +139,20 @@ public final class SnapshotMetadataIndex implements AutoCloseable {
     }
 
     public Optional<Instant> latestSnapshotTime() {
+        if (!ensureInventoryReconciled()) {
+            return Optional.empty();
+        }
         return latestSnapshotTime(false);
     }
 
     public Optional<Instant> latestFullSnapshotTime() {
+        if (!ensureInventoryReconciled()) {
+            return Optional.empty();
+        }
         return latestSnapshotTime(true);
     }
 
-    public ReconcileReport reconcile() throws IOException, SQLException {
+    public synchronized ReconcileReport reconcile() throws IOException, SQLException {
         LinkedHashMap<String, IndexedSnapshot> discovered = new LinkedHashMap<>();
         scanRoot(primarySnapshotsRoot, "primary", SnapshotStatus.LOCAL, discovered);
         for (int index = 0; index < archiveRoots.size(); index++) {
@@ -188,13 +195,15 @@ public final class SnapshotMetadataIndex implements AutoCloseable {
             }
         }
 
-        return new ReconcileReport(
+        ReconcileReport report = new ReconcileReport(
                 discovered.size(),
                 localSnapshots,
                 archivedSnapshots,
                 discoveredSnapshots,
                 newlyMissingSnapshots,
                 missingSnapshots);
+        inventoryReconciled = true;
+        return report;
     }
 
     @Override
@@ -223,6 +232,20 @@ public final class SnapshotMetadataIndex implements AutoCloseable {
         } catch (Exception ex) {
             logger.warning("Failed to read latest snapshot metadata: " + ex.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private synchronized boolean ensureInventoryReconciled() {
+        if (inventoryReconciled) {
+            return true;
+        }
+        try {
+            reconcile();
+            return true;
+        } catch (IOException | SQLException ex) {
+            logger.warning("Failed to reconcile snapshot metadata before reading the schedule baseline: "
+                    + ex.getMessage());
+            return false;
         }
     }
 

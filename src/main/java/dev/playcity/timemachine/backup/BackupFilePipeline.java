@@ -300,6 +300,14 @@ final class BackupFilePipeline {
     }
 
     private void ensureFreeSpace(long estimatedCopyBytes) throws IOException {
+        ensureFreeSpace(settings, estimatedCopyBytes);
+    }
+
+    static void ensureMinimumFreeSpace(TimeMachineSettings settings) throws IOException {
+        ensureFreeSpace(settings, 0L);
+    }
+
+    private static void ensureFreeSpace(TimeMachineSettings settings, long estimatedCopyBytes) throws IOException {
         FileStore fileStore = Files.getFileStore(settings.storageRoot());
         long required;
         try {

@@ -31,7 +31,7 @@ Paper 서버 스레드에서는 다음 작업만 수행합니다.
 - SQLite 초기화, 조회, 기록과 reconcile
 - 스냅샷 체인 검증
 
-플러그인 활성화 시 저장소와 SQLite 초기화도 백그라운드에서 실행됩니다. 초기화가 끝나기 전 명령은 데이터를 변경하지 않고 대기 안내를 반환합니다.
+플러그인 활성화 시 저장소와 SQLite 초기화도 백그라운드에서 실행됩니다. 초기화가 끝나기 전 명령은 데이터를 변경하지 않고 대기 안내를 반환합니다. 선택 기능인 SQLite 인덱스를 열 수 없으면 파일 기반 history로 런타임을 계속하고 reconcile만 사용할 수 없게 둡니다.
 
 ## 책임 분리
 
@@ -153,7 +153,7 @@ SQLite는 snapshot history와 저장 위치 상태를 빠르게 조회하기 위
 - `ARCHIVED`: 설정된 archive root에서 발견
 - `MISSING`: DB에는 있으나 어느 검색 경로에서도 발견되지 않음
 
-스냅샷 디렉터리가 원본이며 SQLite DB는 재생성할 수 있습니다. reconcile은 삭제된 행을 제거하지 않고 `MISSING`으로 남겨 이동본 재발견과 감사가 가능하게 합니다. 같은 ID가 archive에서 다시 발견되면 `ARCHIVED`와 실제 경로로 갱신합니다. schema upgrade는 트랜잭션으로 처리하고, 현재 코드보다 높은 schema version을 발견하면 DB를 낮은 버전으로 덮어쓰지 않고 초기화를 거부합니다.
+스냅샷 디렉터리가 원본이며 SQLite DB는 재생성할 수 있습니다. reconcile은 삭제된 행을 제거하지 않고 `MISSING`으로 남겨 이동본 재발견과 감사가 가능하게 합니다. 같은 ID가 archive에서 다시 발견되면 `ARCHIVED`와 실제 경로로 갱신합니다. 첫 일정 기준 시각 조회는 초기 reconcile이 끝날 때까지 기다려 오래된 DB 행이 시작 catch-up을 만들지 않게 합니다. schema upgrade는 트랜잭션으로 처리하고, 현재 코드보다 높은 schema version을 발견하면 DB를 낮은 버전으로 덮어쓰지 않고 초기화를 거부합니다.
 
 ## 설정 교체와 종료
 

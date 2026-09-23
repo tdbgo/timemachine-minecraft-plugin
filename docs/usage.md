@@ -41,6 +41,7 @@ Do not use Paper reload commands or hot-reload tools such as PlugMan.
 /timemachine history [count]
 /timemachine verify <snapshotId>
 /timemachine prune [confirm <token>]
+/timemachine cleanup [confirm <token>]
 /timemachine reconcile
 /timemachine reload
 ```
@@ -93,6 +94,8 @@ database:
 `storage.root` receives new snapshots. Add directories containing moved snapshots to `storage.archive-roots`; TimeMachine does not move them automatically. Storage roots must not overlap each other or any world directory.
 
 SQLite is a search index. Snapshot files are the source of truth. `/timemachine reconcile` marks discovered primary snapshots as `LOCAL`, archive snapshots as `ARCHIVED`, and undiscovered records as `MISSING`. Missing rows stay in the database for audit and rediscovery.
+
+If SQLite cannot be opened, backups and filesystem-backed history remain available. `doctor` reports the degraded state; repair the database and reload or restart TimeMachine to restore reconciliation.
 
 Reconcile validates the active parent chain. A missing active snapshot blocks the next incremental; the next unfiltered backup creates a new FULL. If the missing snapshot reappears in an archive root, reload and reconcile can resume the recorded chain. A deleted incremental is never skipped to splice a chain together.
 
@@ -187,4 +190,5 @@ Recommended recovery drill:
 - Back up player data, `level.dat`, datapacks, plugin data, and configuration separately.
 - After manually moving snapshots, configure archive roots, reload, reconcile, and verify the latest leaf.
 - Prefer `/timemachine prune` over deleting individual snapshots.
+- Use `/timemachine cleanup` to preview and remove only failure-marked staging directories; active staging is excluded.
 - See the [SAFE/FAST benchmark](change-detection-benchmark.md) before selecting FAST.

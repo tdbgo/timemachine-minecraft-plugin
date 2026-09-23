@@ -13,6 +13,7 @@ import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -25,10 +26,13 @@ class SnapshotMetadataIndexTest {
     void migratesTextTimestampsToEpochAndSortsChronologically() throws Exception {
         Path database = temporaryDirectory.resolve("metadata.db");
         createVersionOneDatabase(database);
+        Path snapshots = temporaryDirectory.resolve("snapshots");
+        writeSnapshotMetadata(snapshots, "earlier", "2026-01-01T00:00:00Z", "INCREMENTAL");
+        writeSnapshotMetadata(snapshots, "later", "2026-01-01T00:00:00.100Z", "INCREMENTAL");
         SnapshotMetadataIndex index = new SnapshotMetadataIndex(
                 Logger.getAnonymousLogger(),
                 new TimeMachineSettings.DatabaseSettings(true, database, "tm_"),
-                temporaryDirectory.resolve("snapshots"),
+                snapshots,
                 List.of());
 
         index.initialize();
@@ -133,6 +137,32 @@ class SnapshotMetadataIndexTest {
         assertEquals(1, stillMissing.missingSnapshots());
     }
 
+    @Test
+    void latestTimeReconcilesDiskBeforeTrustingPersistedRows() throws Exception {
+        Path database = temporaryDirectory.resolve("startup-inventory.db");
+        Path primary = temporaryDirectory.resolve("primary");
+        Path snapshot = writeSnapshotMetadata(primary, "2026/full");
+        SnapshotMetadataIndex firstRuntime = new SnapshotMetadataIndex(
+                Logger.getAnonymousLogger(),
+                new TimeMachineSettings.DatabaseSettings(true, database, "tm_"),
+                primary,
+                List.of());
+        firstRuntime.initialize();
+
+        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), firstRuntime.latestSnapshotTime().orElseThrow());
+
+        Files.delete(snapshot.resolve("snapshot.properties"));
+        Files.delete(snapshot);
+        SnapshotMetadataIndex restartedRuntime = new SnapshotMetadataIndex(
+                Logger.getAnonymousLogger(),
+                new TimeMachineSettings.DatabaseSettings(true, database, "tm_"),
+                primary,
+                List.of());
+        restartedRuntime.initialize();
+
+        assertEquals(Optional.empty(), restartedRuntime.latestSnapshotTime());
+    }
+
     private void createVersionOneDatabase(Path database) throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
                 Statement statement = connection.createStatement()) {
@@ -175,14 +205,18 @@ class SnapshotMetadataIndexTest {
     }
 
     private Path writeSnapshotMetadata(Path root, String snapshotId) throws Exception {
+        return writeSnapshotMetadata(root, snapshotId, "2026-01-01T00:00:00Z", "FULL");
+    }
+
+    private Path writeSnapshotMetadata(Path root, String snapshotId, String createdAt, String kind) throws Exception {
         Path directory = root.resolve(Path.of(snapshotId));
         Files.createDirectories(directory);
         Files.writeString(
                 directory.resolve("snapshot.properties"),
                 "snapshot.id=" + snapshotId + "\n"
-                        + "created.at=2026-01-01T00:00:00Z\n"
+                        + "created.at=" + createdAt + "\n"
                         + "trigger=test\n"
-                        + "snapshot.kind=FULL\n"
+                        + "snapshot.kind=" + kind + "\n"
                         + "changed.files=1\n"
                         + "changed.regionSets=1\n"
                         + "deleted.files=0\n",

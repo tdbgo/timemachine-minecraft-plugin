@@ -30,14 +30,21 @@ public final class ConfigAutoMerger {
         if (Files.notExists(configPath)) {
             return new ConfigMergeResult(false, null, 0, 0, List.of());
         }
+        return merge(configPath, loadDefaultConfig(plugin));
+    }
+
+    static ConfigMergeResult merge(Path configPath, YamlConfiguration defaults)
+            throws IOException, InvalidConfigurationException {
+        if (Files.notExists(configPath)) {
+            return new ConfigMergeResult(false, null, 0, 0, List.of());
+        }
 
         YamlConfiguration current = new YamlConfiguration();
         current.options().parseComments(true);
         current.load(configPath.toFile());
 
-        YamlConfiguration defaults = loadDefaultConfig(plugin);
-        int defaultVersion = Math.max(1, defaults.getInt("config-version", 1));
-        int currentVersion = Math.max(0, current.getInt("config-version", 0));
+        int defaultVersion = readConfigVersion(defaults, true);
+        int currentVersion = readConfigVersion(current, false);
         validateConfigVersion(currentVersion, defaultVersion);
         List<String> warnings = new ArrayList<>();
 
@@ -102,6 +109,25 @@ public final class ConfigAutoMerger {
         }
     }
 
+    private static int readConfigVersion(YamlConfiguration config, boolean bundled)
+            throws InvalidConfigurationException {
+        if (!config.contains("config-version")) {
+            if (!bundled) {
+                return 0;
+            }
+            throw new InvalidConfigurationException("Bundled config.yml is missing config-version.");
+        }
+        Object value = config.get("config-version");
+        if (!(value instanceof Integer || value instanceof Long)) {
+            throw new InvalidConfigurationException("config-version must be an unquoted whole number.");
+        }
+        long version = ((Number) value).longValue();
+        if (version < (bundled ? 1 : 0) || version > Integer.MAX_VALUE) {
+            throw new InvalidConfigurationException("config-version is outside the supported numeric range.");
+        }
+        return (int) version;
+    }
+
     private static boolean migrateKey(
             YamlConfiguration current,
             String legacyPath,
@@ -133,7 +159,7 @@ public final class ConfigAutoMerger {
             ConfigurationSection current,
             ConfigurationSection defaults,
             String pathPrefix,
-            List<String> warnings) {
+            List<String> warnings) throws InvalidConfigurationException {
         boolean changed = false;
         for (String key : defaults.getKeys(false)) {
             String path = pathPrefix.isBlank() ? key : pathPrefix + "." + key;
@@ -142,8 +168,8 @@ public final class ConfigAutoMerger {
                 ConfigurationSection currentChild = current.getConfigurationSection(key);
                 if (currentChild == null) {
                     if (current.contains(key)) {
-                        warnings.add("Skipped auto-merge for '" + path + "' because the existing value is not a section.");
-                        continue;
+                        throw new InvalidConfigurationException(
+                                "Cannot auto-merge '" + path + "' because the existing value is not a section.");
                     }
                     currentChild = current.createSection(key);
                     changed = true;

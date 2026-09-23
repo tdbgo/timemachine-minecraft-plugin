@@ -1,14 +1,18 @@
 package dev.playcity.timemachine.backup;
 
 import dev.playcity.timemachine.i18n.LocalizedMessage;
+import dev.playcity.timemachine.io.FileTreeOperations;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -187,23 +191,25 @@ public final class ChainRetentionService {
     }
 
     private long directorySizeWithoutLinks(Path snapshotDirectory) throws IOException {
-        long total = 0L;
-        try (Stream<Path> stream = Files.walk(snapshotDirectory)) {
-            for (Path path : stream.toList()) {
+        long[] total = new long[1];
+        Files.walkFileTree(snapshotDirectory, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path path, BasicFileAttributes attributes) throws IOException {
                 checkInterrupted();
-                if (Files.isSymbolicLink(path)) {
+                if (attributes.isSymbolicLink()) {
                     throw new IOException("Symbolic links prevent safe pruning: " + path);
                 }
-                if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+                if (attributes.isRegularFile()) {
                     try {
-                        total = Math.addExact(total, Files.size(path));
+                        total[0] = Math.addExact(total[0], attributes.size());
                     } catch (ArithmeticException ex) {
                         throw new IOException("Snapshot size exceeds the supported range: " + snapshotDirectory, ex);
                     }
                 }
+                return FileVisitResult.CONTINUE;
             }
-        }
-        return total;
+        });
+        return total[0];
     }
 
     private List<ChainData> buildChains(Map<String, SnapshotNode> snapshots) throws IOException {
@@ -389,11 +395,7 @@ public final class ChainRetentionService {
         if (!Files.exists(normalized, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
-        try (Stream<Path> stream = Files.walk(normalized)) {
-            for (Path path : stream.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
-            }
-        }
+        FileTreeOperations.deleteRecursively(normalized);
     }
 
     private String fingerprint(

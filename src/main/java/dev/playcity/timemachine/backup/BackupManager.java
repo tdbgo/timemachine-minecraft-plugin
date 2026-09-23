@@ -79,7 +79,7 @@ public final class BackupManager {
                             return;
                         }
                         previous = runtime.getAndSet(candidate);
-                        maintenance.clearPendingPrunePlan();
+                        maintenance.clearPendingPlans();
                         candidate = null;
                     }
                     if (previous != null) {
@@ -220,20 +220,25 @@ public final class BackupManager {
                 try {
                     FileStore fileStore = Files.getFileStore(context.settings.storageRoot());
                     CurrentIndexStore.IndexState indexState = context.indexState.get();
+                    SnapshotStore.FailedStagingPlan failedStaging =
+                            context.snapshotStore.planFailedStagingCleanup();
                     BackupDiagnostics diagnostics = new BackupDiagnostics(
                             context.settings.storageRoot(),
                             context.settings.archiveRoots(),
                             Files.isWritable(context.settings.storageRoot()),
                             fileStore.getUsableSpace(),
                             fileStore.getTotalSpace(),
-                            context.settings.database().enabled(),
+                            context.metadataIndex != null,
                             context.settings.changeDetectionMode(),
                             indexState.baselineRequired(),
                             indexState.entries().size(),
                             indexState.lastSnapshotId(),
                             indexState.baseSnapshotId(),
                             context.chainHealth.get(),
-                            getLatestSnapshotTime().orElse(null));
+                            getLatestSnapshotTime().orElse(null),
+                            failedStaging.entries().size(),
+                            failedStaging.files(),
+                            failedStaging.bytes());
                     runOnMainThread(() -> resultConsumer.accept(diagnostics));
                 } catch (Exception ex) {
                     runOnMainThread(() -> sink.accept("backup.diagnostics_failed", exceptionMessage(ex)));
@@ -394,6 +399,65 @@ public final class BackupManager {
         return submitted;
     }
 
+    public boolean startCleanupPlan(CommandSender sender) {
+        MessageSink sink = (key, arguments) -> sendMessage(sender, key, arguments);
+        BackupRuntimeContext context = runtime.get();
+        if (context == null) {
+            sink.accept("runtime.not_initialized", "/tmb reload");
+            return false;
+        }
+        if (!operationGate.tryAcquire(OperationGate.Operation.CLEANUP)) {
+            sink.accept("backup.busy", currentOperation());
+            return false;
+        }
+        progressTracker.start(
+                "cleanup-plan",
+                OperationProgress.Phase.CLEANING,
+                "Scanning failed staging directories");
+        boolean submitted = submitOperation(
+                OperationGate.Operation.CLEANUP,
+                () -> maintenance.executeCleanupPlan(context, sink),
+                sink);
+        if (!submitted) {
+            progressTracker.fail("Cleanup planner is unavailable.");
+        }
+        return submitted;
+    }
+
+    public boolean startCleanupConfirm(String token, CommandSender sender) {
+        MessageSink sink = (key, arguments) -> sendMessage(sender, key, arguments);
+        SnapshotStore.FailedStagingPlan plan = maintenance.pendingCleanupPlan();
+        if (plan == null) {
+            sink.accept("backup.no_cleanup_plan");
+            return false;
+        }
+        if (token == null || !plan.token().equalsIgnoreCase(token)) {
+            sink.accept("backup.cleanup_token_mismatch");
+            return false;
+        }
+        BackupRuntimeContext context = runtime.get();
+        if (context == null) {
+            sink.accept("runtime.not_initialized", "/tmb reload");
+            return false;
+        }
+        if (!operationGate.tryAcquire(OperationGate.Operation.CLEANUP)) {
+            sink.accept("backup.busy", currentOperation());
+            return false;
+        }
+        progressTracker.start(
+                "cleanup",
+                OperationProgress.Phase.CLEANING,
+                "Deleting confirmed failed staging directories");
+        boolean submitted = submitOperation(
+                OperationGate.Operation.CLEANUP,
+                () -> maintenance.executeCleanupConfirm(context, plan, sink),
+                sink);
+        if (!submitted) {
+            progressTracker.fail("Cleanup executor is unavailable.");
+        }
+        return submitted;
+    }
+
     public void shutdown() {
         BackupRuntimeContext context;
         synchronized (lifecycleLock) {
@@ -437,6 +501,7 @@ public final class BackupManager {
             PreparedBackup preparedBackup;
             BackupFilePipeline.ScanResult scanResult;
             try {
+                BackupFilePipeline.ensureMinimumFreeSpace(context.settings);
                 progressTracker.beginPhase(OperationProgress.Phase.SAVING, 0, 0L, "Saving loaded worlds");
                 Map<String, String> previousWorldSourcePaths = loadPreviousWorldSourcePaths(
                         context,
@@ -564,7 +629,7 @@ public final class BackupManager {
                     scanResult.changedEntries().size(),
                     uniqueRegionSetCount(scanResult.changedEntries(), scanResult.deletedEntries()),
                     scanResult.deletedEntries().size());
-            maintenance.clearPendingPrunePlan();
+            maintenance.clearPendingPlans();
             maintenance.runAutomaticRetention(context, sink);
             progressTracker.complete(snapshot.snapshotId());
             sink.accept(
@@ -872,12 +937,21 @@ public final class BackupManager {
         SnapshotMetadataIndex metadataIndex = null;
         try {
             if (settings.database().enabled()) {
-                metadataIndex = new SnapshotMetadataIndex(
+                SnapshotMetadataIndex candidate = new SnapshotMetadataIndex(
                         plugin.getLogger(),
                         settings.database(),
                         settings.storageRoot().resolve("snapshots"),
                         settings.archiveRoots());
-                metadataIndex.initialize();
+                try {
+                    candidate.initialize();
+                    metadataIndex = candidate;
+                } catch (Exception ex) {
+                    candidate.close();
+                    plugin.getLogger().warning(
+                            "SQLite metadata index is unavailable; backups will continue with filesystem history, "
+                                    + "but reconcile is disabled until the database is repaired: "
+                                    + exceptionMessage(ex));
+                }
             }
             return new BackupRuntimeContext(
                     settings,

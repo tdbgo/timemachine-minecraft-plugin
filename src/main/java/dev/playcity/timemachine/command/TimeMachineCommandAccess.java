@@ -17,6 +17,7 @@ final class TimeMachineCommandAccess {
         permissions.put("history", TimeMachinePermissions.HISTORY);
         permissions.put("verify", TimeMachinePermissions.VERIFY);
         permissions.put("prune", TimeMachinePermissions.PRUNE);
+        permissions.put("cleanup", TimeMachinePermissions.PRUNE);
         permissions.put("reconcile", TimeMachinePermissions.RECONCILE);
         permissions.put("reload", TimeMachinePermissions.RELOAD);
         ROOT_PERMISSIONS = Collections.unmodifiableMap(permissions);

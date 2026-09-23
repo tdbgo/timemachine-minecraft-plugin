@@ -39,9 +39,20 @@ public final class StorageSafetyValidator {
             }
         }
 
-        List<Path> writablePaths = new ArrayList<>(roots);
+        Path databasePath = null;
         if (settings.database().enabled()) {
-            writablePaths.add(resolveCanonicalPath(settings.database().sqliteFile()));
+            databasePath = resolveCanonicalPath(settings.database().sqliteFile());
+            for (Path root : roots) {
+                if (overlaps(root, databasePath)) {
+                    issues.add("Configured SQLite path '" + databasePath
+                            + "' overlaps backup storage '" + root + "'. Use a separate path.");
+                }
+            }
+        }
+
+        List<Path> writablePaths = new ArrayList<>(roots);
+        if (databasePath != null) {
+            writablePaths.add(databasePath);
         }
 
         for (WorldPath world : worlds) {

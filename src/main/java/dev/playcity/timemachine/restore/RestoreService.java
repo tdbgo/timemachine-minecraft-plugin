@@ -3,11 +3,13 @@ package dev.playcity.timemachine.restore;
 import dev.playcity.timemachine.backup.FileHashes;
 import dev.playcity.timemachine.backup.SnapshotStore;
 import dev.playcity.timemachine.i18n.LocalizedMessage;
+import dev.playcity.timemachine.io.FileTreeOperations;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.CopyOption;
+import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -136,6 +138,7 @@ public final class RestoreService {
             for (RestoreEntry entry : entries) {
                 totalBytes = safeAdd(totalBytes, entry.size());
             }
+            ensureRestoreSpace(staging, totalBytes);
             progressConsumer.accept(new ExportProgress(ExportPhase.COPYING, 0, entries.size(), 0L, totalBytes));
             for (int entryIndex = 0; entryIndex < entries.size(); entryIndex++) {
                 RestoreEntry entry = entries.get(entryIndex);
@@ -562,6 +565,15 @@ public final class RestoreService {
         }
     }
 
+    static void ensureRestoreSpace(Path destination, long requiredBytes) throws IOException {
+        FileStore fileStore = Files.getFileStore(destination);
+        long usableBytes = fileStore.getUsableSpace();
+        if (usableBytes < requiredBytes) {
+            throw new IOException("Insufficient free space for restore export: usable="
+                    + usableBytes + " bytes, required=" + requiredBytes + " bytes.");
+        }
+    }
+
     private void writeRestoreMetadata(
             Path staging,
             String snapshotId,
@@ -638,11 +650,7 @@ public final class RestoreService {
                     || !Files.exists(staging, LinkOption.NOFOLLOW_LINKS)) {
                 return;
             }
-            try (Stream<Path> stream = Files.walk(staging)) {
-                for (Path path : stream.sorted(Comparator.reverseOrder()).toList()) {
-                    Files.deleteIfExists(path);
-                }
-            }
+            FileTreeOperations.deleteRecursively(staging);
         } catch (IOException ignored) {
         }
     }

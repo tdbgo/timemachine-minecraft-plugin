@@ -53,6 +53,7 @@ TimeMachine은 Paper 월드의 `.mca` 파일을 확인 가능한 스냅샷으로
 - 같은 JAR에서 실행하는 오프라인 `restore list`, `restore verify`, `restore export`
 - archive 저장소로 옮긴 스냅샷을 다시 연결하는 로컬 SQLite 검색 인덱스와 reconcile
 - 실시간 진행률, `/tmb doctor` 진단, 몰아치지 않는 catch-up을 갖춘 일간·월간 일정
+- 실패 표시 staging 탐지와 미리보기·확인 정리. 진행 중 복사본은 제외
 - 영어와 한국어 출력, 기본값은 플레이어의 클라이언트 언어를 따름
 
 ### 빠른 시작

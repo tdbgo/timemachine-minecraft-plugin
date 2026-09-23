@@ -9,6 +9,7 @@ final class OperationGate {
         RECONCILE,
         VERIFY,
         PRUNE,
+        CLEANUP,
         RELOADING,
         SHUTTING_DOWN
     }

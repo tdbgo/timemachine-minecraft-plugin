@@ -2,6 +2,7 @@ package dev.playcity.timemachine.backup;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.playcity.timemachine.config.TimeMachineSettings;
@@ -88,7 +89,19 @@ class BackupFilePipelineTest {
         }
     }
 
+    @Test
+    void rejectsAnUnavailableReserveBeforeScanningOrHashing() throws Exception {
+        TimeMachineSettings settings = settings(Long.MAX_VALUE);
+        Files.createDirectories(settings.storageRoot());
+
+        assertThrows(java.io.IOException.class, () -> BackupFilePipeline.ensureMinimumFreeSpace(settings));
+    }
+
     private TimeMachineSettings settings() {
+        return settings(0L);
+    }
+
+    private TimeMachineSettings settings(long minimumFreeSpaceBytes) {
         return new TimeMachineSettings(
                 LanguageMode.AUTO,
                 temporaryDirectory.resolve("backups"),
@@ -103,7 +116,7 @@ class BackupFilePipelineTest {
                 true,
                 ChangeDetectionMode.FAST,
                 2,
-                0L,
+                minimumFreeSpaceBytes,
                 false,
                 0,
                 List.of(),

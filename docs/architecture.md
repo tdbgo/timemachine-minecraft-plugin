@@ -23,7 +23,7 @@ The Paper server thread performs only Bukkit world operations:
 - call `world.save(true)`
 - restore autosave state
 
-Plugin-owned workers perform filesystem scans, hashing, copies, manifests, index updates, SQLite work, reconciliation, and chain verification. Startup initializes storage and SQLite in the background. Commands do not mutate data until initialization completes.
+Plugin-owned workers perform filesystem scans, hashing, copies, manifests, index updates, SQLite work, reconciliation, and chain verification. Startup initializes storage and SQLite in the background. Commands do not mutate data until initialization completes. If the optional SQLite index cannot be opened, the runtime continues with filesystem history and leaves reconciliation unavailable.
 
 ## Backup transaction
 
@@ -104,7 +104,7 @@ Retention is disabled by default and removes only complete chains.
 - Retained leaves are verified before deletion.
 - Targets move into plugin-owned retention trash first and roll back if the move fails.
 
-SQLite is a rebuildable search index. Reconcile marks snapshots in the primary store as `LOCAL`, snapshots in configured archive roots as `ARCHIVED`, and undiscovered records as `MISSING`. Missing rows remain for audit and later rediscovery. Reconcile also validates the active parent chain before incrementals continue.
+SQLite is a rebuildable search index. Reconcile marks snapshots in the primary store as `LOCAL`, snapshots in configured archive roots as `ARCHIVED`, and undiscovered records as `MISSING`. Missing rows remain for audit and later rediscovery. The first schedule-baseline query waits for initial reconciliation so stale rows cannot trigger a startup catch-up. Reconcile also validates the active parent chain before incrementals continue.
 
 ## Reload and shutdown
 
